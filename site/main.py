@@ -53,12 +53,12 @@ class MorseDecoder:
         elif color == 'yellow':
             self.message = ''
             self.current_symbol = ''
+            print("Полный сброс сообщения и текущей комбинации")
+        
         elif color == 'green':
-            # Добавляем слэш, но не проверяем комбинацию сразу
             self.current_symbol += '/'
             print(f"Обнаружено (/) | Текущая комбинация: {self.current_symbol}")
         
-        # Проверяем, достигли ли мы 5 символов
         if len(self.current_symbol) == 5:
             letter = MORSE_CODE_DICT.get(self.current_symbol, '?')
             self.message += letter
@@ -73,17 +73,20 @@ class MorseDecoder:
 def get_color_ranges():
     ranges = {
         'red': [
-            (np.array([0, 150, 100]), np.array([10, 255, 255])),  # Увеличена минимальная насыщенность и яркость
-            (np.array([170, 150, 100]), np.array([180, 255, 255]))
-        ],
-        'green': [
-            (np.array([50, 100, 100]), np.array([85, 255, 255]))  # Уже диапазон и выше минимальные значения
-        ],
-        'blue': [
-            (np.array([100, 150, 100]), np.array([130, 255, 255]))  # Увеличена минимальная яркость
+            (np.array([0, 100, 80]), np.array([8, 255, 255])),     # Яркий красный
+            (np.array([172, 100, 80]), np.array([180, 255, 255])), # Яркий красный (другой край)
+            (np.array([0, 50, 40]), np.array([8, 255, 150])),
+            (np.array([172, 50, 40]), np.array([180, 255, 150]))
         ],
         'yellow': [
-            (np.array([20, 150, 150]), np.array([130, 255, 255]))  # Желтый цвет
+            (np.array([20, 120, 120]), np.array([30, 255, 255])),  # Чистый желтый
+            (np.array([15, 100, 100]), np.array([35, 255, 255]))
+        ],
+        'green': [
+            (np.array([40, 80, 80]), np.array([80, 255, 255]))     # Зеленый
+        ],
+        'blue': [
+            (np.array([100, 80, 80]), np.array([130, 255, 255]))   # Синий
         ]
     }
     return ranges
@@ -94,9 +97,10 @@ def detect_color(frame, color_ranges):
     dominant_color = None
     max_area = 0
     
-    # Добавим проверку общей яркости области
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     avg_brightness = np.mean(gray)
+    
+    color_areas = {}
     
     for color_name, ranges in color_ranges.items():
         total_mask = None
@@ -109,20 +113,23 @@ def detect_color(frame, color_ranges):
             else:
                 total_mask = cv2.bitwise_or(total_mask, mask)
         
-        # Улучшенная морфологическая обработка
-        kernel = np.ones((7, 7), np.uint8)
+        kernel = np.ones((5, 5), np.uint8)
         total_mask = cv2.morphologyEx(total_mask, cv2.MORPH_CLOSE, kernel)
         total_mask = cv2.morphologyEx(total_mask, cv2.MORPH_OPEN, kernel)
         
         contours, _ = cv2.findContours(total_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        max_contour_area = 0
         
         for contour in contours:
             area = cv2.contourArea(contour)
-            # Увеличим минимальную площадь и добавим проверку яркости
-            if area > 500 and avg_brightness > 50:  # Увеличена минимальная площадь
-                if area > max_area:
-                    max_area = area
-                    dominant_color = color_name
+            if area > max_contour_area:
+                max_contour_area = area
+        
+        if max_contour_area > 200 and avg_brightness > 30:
+            color_areas[color_name] = max_contour_area
+    
+    if color_areas:
+        dominant_color = max(color_areas, key=color_areas.get)
     
     return dominant_color
 
@@ -132,13 +139,14 @@ def main():
     color_ranges = get_color_ranges()
     
     print("Запуск системы распознавания азбуки Морзе...")
-    print("Красный = точка (.), Синий = тире (-), Зеленый = слэш (/)")
+    print("Красный = точка (.), Синий = тире (-), Зеленый = слэш (/), Желтый = полный сброс")
     print("Каждая буква должна состоять из 5 символов!")
+    print("Комбинация НЕ сбрасывается при пропадании цвета - только при наборе 5 символов или желтом цвете")
     print("Нажмите 'q' для выхода")
     
     last_detected_color = None
     color_persistance_time = 0
-    no_color_count = 0  # Счетчик кадров без цвета
+    no_color_count = 0
     
     while True:
         ret, frame = cap.read()
@@ -149,33 +157,18 @@ def main():
         
         current_time = time.time()
         
-        # Добавляем фильтр по стабильности
         if detected_color:
             no_color_count = 0
             if detected_color != last_detected_color:
-                if current_time - color_persistance_time > 0.8:  # Увеличено время стабильности
+                if current_time - color_persistance_time > 0.5:
                     decoder.add_color_signal(detected_color)
                     last_detected_color = detected_color
                     color_persistance_time = current_time
         else:
             no_color_count += 1
-            # Если несколько кадров подряд нет цвета, сбрасываем last_detected_color
-            if no_color_count > 2:
+            if no_color_count > 3:
                 last_detected_color = None
         
-        # Автозавершение только если набрано 5 символов
-        if len(decoder.current_symbol) > 0 and (current_time - decoder.last_change_time > 5.0):
-            if len(decoder.current_symbol) == 5:
-                letter = MORSE_CODE_DICT.get(decoder.current_symbol, '?')
-                decoder.message += letter
-                print(f"Автозавершение: {decoder.current_symbol} = {letter}")
-            else:
-                print(f"Таймаут: неполная комбинация {decoder.current_symbol} отброшена")
-            
-            print(f"Текущее сообщение: {decoder.message}")
-            decoder.current_symbol = ''
-        
-        # Отображение информации
         cv2.putText(frame, f"Message: {decoder.message}", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(frame, f"Current: {decoder.current_symbol}", (10, 60), 
@@ -187,6 +180,10 @@ def main():
         cv2.putText(frame, f"Current frame: {detected_color}", (10, 150), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         
+        if len(decoder.current_symbol) > 0:
+            cv2.putText(frame, "STATUS: Waiting for next color...", (10, 180), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        
         cv2.imshow('Morse Code Recognition', frame)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -196,13 +193,11 @@ def main():
     cv2.destroyAllWindows()
     print(f"Финальное сообщение: {decoder.message}")
 
-# Функция для калибровки цветов (опционально)
-def calibrate_colors():
-    """Функция для калибровки цветовых диапазонов под ваше освещение"""
+def debug_colors():
     cap = cv2.VideoCapture(2)
     color_ranges = get_color_ranges()
     
-    print("Режим калибровки. Нажмите 'q' для выхода")
+    print("Режим отладки цветов. Нажмите 'q' для выхода")
     
     while True:
         ret, frame = cap.read()
@@ -211,7 +206,6 @@ def calibrate_colors():
         
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # Показываем маски для каждого цвета
         for color_name, ranges in color_ranges.items():
             total_mask = None
             for lower, upper in ranges:
@@ -221,14 +215,27 @@ def calibrate_colors():
                 else:
                     total_mask = cv2.bitwise_or(total_mask, mask)
             
-            # Применяем маску к оригинальному изображению
             masked_frame = cv2.bitwise_and(frame, frame, mask=total_mask)
-            cv2.putText(masked_frame, f"Mask: {color_name}", (10, 30), 
+            
+            contours, _ = cv2.findContours(total_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            total_area = sum(cv2.contourArea(contour) for contour in contours)
+            
+            cv2.putText(masked_frame, f"{color_name} (area: {total_area:.0f})", (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             cv2.imshow(f'Mask {color_name}', masked_frame)
         
-        cv2.imshow('Original', frame)
-        cv2.imshow('HSV', hsv)
+        h, w = frame.shape[:2]
+        center_x, center_y = w // 2, h // 2
+        hsv_center = hsv[center_y, center_x]
+        bgr_center = frame[center_y, center_x]
+        
+        cv2.circle(frame, (center_x, center_y), 5, (0, 255, 0), 2)
+        cv2.putText(frame, f"HSV: {hsv_center}", (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(frame, f"BGR: {bgr_center}", (10, 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        cv2.imshow('Original with center point', frame)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -237,7 +244,4 @@ def calibrate_colors():
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    # Если нужно провести калибровку, раскомментируйте следующую строку:
-    # calibrate_colors()
-    
     main()

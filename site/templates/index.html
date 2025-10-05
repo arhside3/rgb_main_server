@@ -30,6 +30,7 @@
             display: flex;
             gap: 15px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
         .timer-section {
             display: flex;
@@ -63,6 +64,12 @@
             background: #bdc3c7;
             cursor: not-allowed;
         }
+        .switch-mode-btn {
+            background: #9b59b6;
+        }
+        .switch-mode-btn:hover {
+            background: #8e44ad;
+        }
         .logs-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -74,6 +81,7 @@
             border-radius: 5px;
             padding: 15px;
             background: #fafafa;
+            width: 1170px;
         }
         .log-section h3 {
             margin-top: 0;
@@ -92,22 +100,37 @@
             font-size: 14px;
             line-height: 1.4;
         }
-        .com-section {
+        .com-sections {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
             margin-top: 20px;
+        }
+        .com-section {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background: #fafafa;
+        }
+        .com-section h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
         }
         .com-controls { 
             display: flex; 
             gap: 10px; 
             margin-bottom: 10px; 
         }
-        #comInput {
+        .com-input {
             flex: 1;
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
         }
-        #comOutput {
+        .com-output {
             border: 1px solid #ccc;
             padding: 10px;
             height: 200px;
@@ -140,30 +163,41 @@
         .status-inactive {
             background: #e74c3c;
         }
+        .port-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #3498db;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .port-usb0 {
+            background: #e74c3c;
+        }
+        .port-usb1 {
+            background: #9b59b6;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <!-- Таймер -->
             <div class="timer-section">
                 <label><strong>Таймер (сек):</strong></label>
                 <input type="number" class="timer-input" placeholder="Пусто = бесконечно" min="0">
                 <div>Осталось: <span id="timerDisplay">∞</span> сек</div>
             </div>
             
-            <!-- Текущий шифр -->
             <div class="cipher-info">
                 Текущий шифр: <span style="color: #e74c3c;">Азбука Морзе</span>
             </div>
             
-            <!-- Декодировка -->
             <div class="cipher-info">
                 Декодировка: <span style="color: #27ae60;">Распознавание с камеры</span>
             </div>
         </div>
 
-        <!-- Кнопки управления -->
         <div class="controls">
             <button onclick="startCameraSystem()" id="startCameraBtn">
                 <span class="status-indicator status-inactive"></span>
@@ -173,9 +207,11 @@
                 <span class="status-indicator status-inactive"></span>
                 ⏹️ Остановить систему камеры
             </button>
+            <button onclick="sendSwitchMode()" class="switch-mode-btn" id="switchModeBtn">
+                🔄 Switch Mode
+            </button>
         </div>
 
-        <!-- Логи с камеры и микрофона -->
         <div class="logs-container">
             <div class="log-section">
                 <h3>📷 Логи камеры:</h3>
@@ -183,24 +219,29 @@
                     <div class="log-entry">Система камеры не запущена. Нажмите "Запустить систему камеры"</div>
                 </div>
             </div>
-            
-            <div class="log-section">
-                <h3>🎤 Логи микрофона:</h3>
-                <div class="logs" id="micLogs">
-                    <div class="log-entry">Микрофон не активирован</div>
-                </div>
-            </div>
         </div>
 
-        <!-- COM Port управление -->
-        <div class="com-section">
-            <h3>🔌 COM Port управление (UART):</h3>
-            <div class="com-controls">
-                <input type="text" id="comInput" placeholder="Введите команду для ESP32...">
-                <button onclick="sendCommand()">Отправить</button>
+        <div class="com-sections">
+            <div class="com-section">
+                <h3>🔌 COM Port 0 (UART) <span class="port-indicator port-usb0">/dev/ttyUSB0</span></h3>
+                <div class="com-controls">
+                    <input type="text" class="com-input" id="comInput0" placeholder="Введите команду для ESP32...">
+                    <button onclick="sendCommand(0)">Отправить</button>
+                </div>
+                <div class="com-output" id="comOutput0">
+                    <div class="log-entry">Ожидание данных с COM порта 0...</div>
+                </div>
             </div>
-            <div id="comOutput">
-                <div class="log-entry">Ожидание данных с COM порта...</div>
+
+            <div class="com-section">
+                <h3>🔌 COM Port 1 (UART) <span class="port-indicator port-usb1">/dev/ttyUSB1</span></h3>
+                <div class="com-controls">
+                    <input type="text" class="com-input" id="comInput1" placeholder="Введите команду для ESP32...">
+                    <button onclick="sendCommand(1)">Отправить</button>
+                </div>
+                <div class="com-output" id="comOutput1">
+                    <div class="log-entry">Ожидание данных с COM порта 1...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -210,30 +251,41 @@
         let timerInterval = null;
         let cameraActive = false;
 
-        // Обработка таймера
-        document.querySelector('.timer-input').addEventListener('input', function(e) {
-            clearInterval(timerInterval);
-            const seconds = parseInt(e.target.value);
-            
-            if (seconds > 0) {
-                let timeLeft = seconds;
-                document.getElementById('timerDisplay').textContent = timeLeft;
-                
-                timerInterval = setInterval(() => {
-                    timeLeft--;
-                    document.getElementById('timerDisplay').textContent = timeLeft;
-                    
-                    if (timeLeft <= 0) {
-                        clearInterval(timerInterval);
-                        document.getElementById('timerDisplay').textContent = 'Время вышло!';
-                    }
-                }, 1000);
-            } else {
-                document.getElementById('timerDisplay').textContent = '∞';
+        function getElement(id) {
+            const element = document.getElementById(id);
+            if (!element) {
+                console.error(`Element ${id} not found`);
             }
-        });
+            return element;
+        }
 
-        // Запуск системы камеры
+        const timerInput = document.querySelector('.timer-input');
+        if (timerInput) {
+            timerInput.addEventListener('input', function(e) {
+                clearInterval(timerInterval);
+                const seconds = parseInt(e.target.value);
+                
+                if (seconds > 0) {
+                    let timeLeft = seconds;
+                    const timerDisplay = getElement('timerDisplay');
+                    if (timerDisplay) timerDisplay.textContent = timeLeft;
+                    
+                    timerInterval = setInterval(() => {
+                        timeLeft--;
+                        if (timerDisplay) timerDisplay.textContent = timeLeft;
+                        
+                        if (timeLeft <= 0) {
+                            clearInterval(timerInterval);
+                            if (timerDisplay) timerDisplay.textContent = 'Время вышло!';
+                        }
+                    }, 1000);
+                } else {
+                    const timerDisplay = getElement('timerDisplay');
+                    if (timerDisplay) timerDisplay.textContent = '∞';
+                }
+            });
+        }
+
         function startCameraSystem() {
             if (!cameraActive) {
                 socket.emit('start_camera');
@@ -242,41 +294,57 @@
             }
         }
 
-        // Остановка системы камеры
         function stopCameraSystem() {
-            // Здесь можно добавить логику для остановки процесса
             cameraActive = false;
             updateCameraButtons();
             addCameraLog('Система камеры остановлена');
         }
 
-        function updateCameraButtons() {
-            const startBtn = document.getElementById('startCameraBtn');
-            const stopBtn = document.getElementById('stopCameraBtn');
-            const statusIndicator = startBtn.querySelector('.status-indicator');
-            
-            if (cameraActive) {
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                statusIndicator.className = 'status-indicator status-active';
-                startBtn.innerHTML = '<span class="status-indicator status-active"></span> ✅ Система камеры запущена';
-            } else {
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                statusIndicator.className = 'status-indicator status-inactive';
-                startBtn.innerHTML = '<span class="status-indicator status-inactive"></span> 🎥 Запустить систему камеры';
+        function sendSwitchMode() {
+            socket.emit('com_command', {port: 0, command: 'switchmode'});
+            const btn = getElement('switchModeBtn');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '🔄 Отправка...';
+                btn.disabled = true;
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 1000);
             }
         }
 
-        // Добавление лога в раздел камеры
+        function updateCameraButtons() {
+            const startBtn = getElement('startCameraBtn');
+            const stopBtn = getElement('stopCameraBtn');
+            
+            if (startBtn && stopBtn) {
+                const statusIndicator = startBtn.querySelector('.status-indicator');
+                
+                if (cameraActive) {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    if (statusIndicator) statusIndicator.className = 'status-indicator status-active';
+                    startBtn.innerHTML = '<span class="status-indicator status-active"></span> ✅ Система камеры запущена';
+                } else {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    if (statusIndicator) statusIndicator.className = 'status-indicator status-inactive';
+                    startBtn.innerHTML = '<span class="status-indicator status-inactive"></span> 🎥 Запустить систему камеры';
+                }
+            }
+        }
+
         function addCameraLog(message) {
-            const logElement = document.getElementById('cameraLogs');
+            const logElement = getElement('cameraLogs');
+            if (!logElement) return;
+            
             const timestamp = new Date().toLocaleTimeString();
             const logEntry = document.createElement('div');
             logEntry.className = 'log-entry';
             logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
             
-            // Очищаем начальное сообщение если это первый лог
             if (logElement.children.length === 1 && logElement.children[0].textContent.includes('не запущена')) {
                 logElement.innerHTML = '';
             }
@@ -285,61 +353,67 @@
             logElement.scrollTop = logElement.scrollHeight;
         }
 
-        // Получение логов с камеры 
         socket.on('camera_log', function(data) {
             addCameraLog(data);
         });
 
-        // Получение логов с микрофона
-        socket.on('mic_log', function(data) {
-            const logElement = document.getElementById('micLogs');
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${data}`;
-            
-            logElement.appendChild(logEntry);
-            logElement.scrollTop = logElement.scrollHeight;
-        });
-
-        // Получение данных с COM порта
         socket.on('com_data', function(data) {
-            const outputElement = document.getElementById('comOutput');
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${data}`;
-            
-            outputElement.appendChild(logEntry);
-            outputElement.scrollTop = outputElement.scrollHeight;
+            if (typeof data.port === 'number' && (data.port === 0 || data.port === 1)) {
+                const outputElement = getElement(`comOutput${data.port}`);
+                if (!outputElement) return;
+                
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${data.message}`;
+                
+                if (outputElement.children.length === 1 && 
+                    outputElement.children[0].textContent.includes('Ожидание данных')) {
+                    outputElement.innerHTML = '';
+                }
+                
+                outputElement.appendChild(logEntry);
+                outputElement.scrollTop = outputElement.scrollHeight;
+            }
         });
 
-        // Отправка команды на COM порт
-        function sendCommand() {
-            const input = document.getElementById('comInput');
-            const command = input.value.trim();
+        function sendCommand(portNumber) {
+            const input = getElement(`comInput${portNumber}`);
+            if (!input) return;
             
+            const command = input.value.trim();
             if (command) {
-                socket.emit('com_command', command);
+                socket.emit('com_command', {port: portNumber, command: command});
                 input.value = '';
             }
         }
 
-        // Отправка команды по нажатию Enter
-        document.getElementById('comInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendCommand();
-            }
-        });
+        const comInput0 = getElement('comInput0');
+        const comInput1 = getElement('comInput1');
+        
+        if (comInput0) {
+            comInput0.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendCommand(0);
+            });
+        }
+        
+        if (comInput1) {
+            comInput1.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendCommand(1);
+            });
+        }
 
-        // Обработка соединения
         socket.on('connect', function() {
             console.log('Connected to server');
+            addCameraLog('Подключено к серверу');
         });
 
         socket.on('disconnect', function() {
             console.log('Disconnected from server');
+            addCameraLog('Отключено от сервера');
         });
+
+        updateCameraButtons();
     </script>
-</body>
+    </body>
 </html>
